@@ -7,114 +7,197 @@
 <meta name="description" content="A FastAPI service that ingests warehouse shipment events: authenticate, validate, apply a business rule, and forward downstream. Design walkthrough with a live in-browser demo.">
 <style>
   :root{
-    --bg:#faf8f4; --panel:#ffffff; --ink:#26221c; --muted:#6b6456;
-    --line:#e7e1d6; --accent:#7a2e34; --accent-soft:#f3e7e5;
-    --ok:#2f6b4f; --ok-soft:#e6f1ea; --warn:#8a5a1a; --warn-soft:#f7eeddff; --err:#7a2e34; --err-soft:#f3e2e2;
-    --code-bg:#f4f0e8; --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
-    --serif:Georgia,"Times New Roman",serif;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Roboto,Helvetica,Arial,sans-serif;
-  }
-  @media (prefers-color-scheme:dark){
-    :root{
-      --bg:#16140f; --panel:#201d16; --ink:#ece7dc; --muted:#a89f8c;
-      --line:#332e24; --accent:#e0a3a8; --accent-soft:#2c1f20;
-      --ok:#8fd3ac; --ok-soft:#16241c; --warn:#e0b877; --warn-soft:#2a2113; --err:#e79aa0; --err-soft:#2c1a1b;
-      --code-bg:#1a1712;
-    }
+    --bg:#08090a; --panel:#0f1011; --panel-2:#131417;
+    --ink:#ffffff; --body:#c4c8cf; --muted:#8a8f98;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.13);
+    --accent:#8b93ff; --accent-2:#5e6ad2; --accent-soft:rgba(94,106,210,.16);
+    --ok:#4cc38a; --ok-soft:rgba(76,195,138,.13); --warn:#e3b341; --warn-soft:rgba(227,179,65,.12);
+    --err:#ff7185; --err-soft:rgba(255,113,133,.12);
+    --code-bg:#0c0d0f; --code-ink:#c9ced8;
+    --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI","Noto Sans TC",Roboto,Helvetica,Arial,sans-serif;
+    --shadow-card:0 1px 0 rgba(255,255,255,.03) inset,0 8px 24px rgba(0,0,0,.4);
+    --shadow-btn:0 2px 12px rgba(94,106,210,.4);
+    --maxw:1160px;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;font-size:17px}
-  .wrap{max-width:820px;margin:0 auto;padding:0 22px}
-  a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
-  a:hover{border-bottom-color:currentColor}
-  code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .38em;border-radius:4px}
-  pre{font-family:var(--mono);font-size:14px;line-height:1.55;background:var(--code-bg);border:1px solid var(--line);
-      border-radius:10px;padding:16px;overflow-x:auto;margin:0}
+  body{margin:0;background:var(--bg);color:var(--body);font-family:var(--sans);line-height:1.7;font-size:17px;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 32px}
+  .prose{max-width:72ch}
+  a{color:var(--accent);text-decoration:none;font-weight:500}
+  a:hover{color:#aab1ff}
+  code{font-family:var(--mono);font-size:.86em;background:rgba(255,255,255,.06);color:#e4e7ee;
+    padding:.12em .4em;border-radius:5px;border:1px solid var(--line)}
+  pre{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--code-bg);color:var(--code-ink);
+    border:1px solid var(--line);border-radius:12px;padding:18px 20px;overflow-x:auto;margin:0}
+  pre code{background:none;border:0;color:inherit;padding:0;font-size:1em}
 
   /* top bar */
-  .topbar{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);
-    backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  .topbar .wrap{display:flex;align-items:center;justify-content:space-between;height:54px}
-  .brand{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.02em}
-  .brand b{color:var(--ink)}
-  .langtog{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;font-size:13px}
-  .langtog button{border:0;background:transparent;color:var(--muted);padding:5px 13px;cursor:pointer;font-family:var(--sans)}
-  .langtog button[aria-pressed=true]{background:var(--accent);color:#fff}
+  .topbar{position:sticky;top:0;z-index:20;background:rgba(8,9,10,.7);
+    backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .topbar .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.01em}
+  .brand b{color:var(--ink);font-weight:600}
+  .langtog{display:inline-flex;border:1px solid var(--line-2);border-radius:999px;overflow:hidden;font-size:13px}
+  .langtog button{border:0;background:transparent;color:var(--muted);padding:5px 14px;cursor:pointer;font-family:var(--sans);font-weight:500}
+  .langtog button[aria-pressed=true]{background:var(--accent-2);color:#fff}
 
-  /* hero */
-  header.hero{padding:56px 0 30px;border-bottom:1px solid var(--line)}
-  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
-  h1{font-family:var(--serif);font-weight:700;font-size:2.5rem;line-height:1.12;margin:0 0 16px;letter-spacing:-.01em}
-  .lede{font-size:1.15rem;color:var(--muted);margin:0 0 22px;max-width:66ch}
-  .badges{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 20px}
-  .badge{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel);
-    border:1px solid var(--line);border-radius:999px;padding:4px 11px}
-  .herolinks{display:flex;flex-wrap:wrap;gap:18px;font-size:15px}
-  .herolinks a{font-weight:600}
+  /* hero — full-bleed, two columns: copy + a floating request card */
+  header.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+  header.hero::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(70% 90% at 75% -25%,rgba(94,106,210,.34),transparent 60%),
+               radial-gradient(50% 70% at 6% -10%,rgba(124,134,255,.12),transparent 55%)}
+  header.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(124,134,255,.5),transparent)}
+  header.hero .wrap{position:relative;z-index:1;padding-top:76px;padding-bottom:80px}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 18px;font-weight:600}
+  h1{font-weight:600;font-size:3.4rem;line-height:1.03;margin:0 0 20px;letter-spacing:-.03em;
+    background:linear-gradient(176deg,#ffffff 30%,#b9bdff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:1.16rem;color:var(--muted);margin:0 0 26px;max-width:54ch;line-height:1.6}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}
+  .badge{font-family:var(--mono);font-size:12px;color:var(--body);background:rgba(255,255,255,.04);
+    border:1px solid var(--line-2);border-radius:999px;padding:5px 12px}
+  .herolinks{display:flex;flex-wrap:wrap;gap:22px;font-size:15px}
+  .herolinks a{font-weight:600;color:var(--ink)}
+  .herolinks a:hover{color:var(--accent)}
 
-  h2{font-family:var(--serif);font-size:1.6rem;margin:52px 0 6px;letter-spacing:-.01em}
-  .section-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:52px 0 -2px}
-  .section-kicker + h2{margin-top:6px}
-  h3{font-size:1.12rem;margin:26px 0 4px}
-  p{margin:14px 0}
+  /* floating code card (hero + reused) */
+  .codecard{background:var(--panel);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-card)}
+  .codecard-bar{display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .codecard-bar .dot{width:11px;height:11px;border-radius:50%;background:#2b2d33}
+  .codecard-title{margin-left:8px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .codecard pre{border:0;border-radius:0;background:transparent}
 
-  .flow{list-style:none;counter-reset:s;padding:0;margin:22px 0;display:grid;gap:10px}
-  .flow li{counter-increment:s;position:relative;padding:14px 16px 14px 54px;background:var(--panel);
-    border:1px solid var(--line);border-radius:10px}
-  .flow li::before{content:counter(s);position:absolute;left:14px;top:13px;width:26px;height:26px;border-radius:50%;
-    background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:700;
+  /* section rhythm */
+  section{padding:8px 0}
+  .section-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);margin:66px 0 0;font-weight:600}
+  h2{font-weight:600;font-size:2.05rem;margin:8px 0 18px;letter-spacing:-.025em;color:var(--ink);
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  h3{font-size:1.14rem;margin:26px 0 4px;color:var(--ink);font-weight:600}
+  p{margin:15px 0}
+
+  /* results / metric strip — lead with proof, colour = meaning */
+  .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:26px 0 8px}
+  .metric{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 18px;box-shadow:var(--shadow-card)}
+  .metric .num{font-family:var(--mono);font-weight:700;font-size:2rem;line-height:1;letter-spacing:-.02em;margin-bottom:10px}
+  .metric .k{color:var(--ink);font-weight:600;font-size:14.5px}
+  .metric .s{color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.45}
+  .m-blue .num{color:#7aa2ff} .m-green .num{color:#4cc38a} .m-amber .num{color:#e3b341}
+  .m-purple .num{color:#b490ff} .m-cyan .num{color:#4fd6e0}
+  /* each card glows in its own colour, like the reference's featured cards */
+  .m-blue{border-color:rgba(122,162,255,.45);box-shadow:0 0 0 1px rgba(122,162,255,.25),0 0 22px rgba(122,162,255,.15)}
+  .m-green{border-color:rgba(76,195,138,.45);box-shadow:0 0 0 1px rgba(76,195,138,.22),0 0 22px rgba(76,195,138,.14)}
+  .m-amber{border-color:rgba(227,179,65,.5);box-shadow:0 0 0 1px rgba(227,179,65,.28),0 0 24px rgba(227,179,65,.17)}
+  .m-purple{border-color:rgba(180,144,255,.45);box-shadow:0 0 0 1px rgba(180,144,255,.24),0 0 22px rgba(180,144,255,.15)}
+  .m-cyan{border-color:rgba(79,214,224,.45);box-shadow:0 0 0 1px rgba(79,214,224,.22),0 0 22px rgba(79,214,224,.14)}
+
+  /* flow — horizontal pipeline of step cards */
+  .flow{list-style:none;counter-reset:s;padding:0;margin:26px 0 8px;display:grid;
+    grid-template-columns:repeat(5,1fr);gap:14px}
+  .flow li{counter-increment:s;position:relative;padding:46px 16px 18px;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-card);font-size:14.5px;line-height:1.55}
+  .flow li::before{content:counter(s);position:absolute;left:16px;top:15px;width:30px;height:30px;border-radius:9px;
+    background:var(--accent-soft);color:var(--accent);border:1px solid var(--line-2);
+    font-family:var(--mono);font-size:14px;font-weight:700;display:grid;place-items:center}
+  .flow b{font-weight:600;color:var(--ink)}
+
+  figure{margin:30px 0;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:var(--shadow-card)}
+  figure img{width:100%;height:auto;display:block;border-radius:8px}
+  figcaption{font-size:13px;color:var(--muted);text-align:center;margin-top:14px}
+
+  /* card grids */
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:24px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;box-shadow:var(--shadow-card)}
+  .decision{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 24px 8px;
+    box-shadow:var(--shadow-card);position:relative;overflow:hidden}
+  .decision::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent-2)}
+  .decision h3{margin:20px 0 2px}
+
+  /* evolution cards with big index */
+  .evo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:24px 0}
+  .evo{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
+    box-shadow:var(--shadow-card);display:flex;gap:16px;align-items:flex-start;font-size:15px;line-height:1.6}
+  .evo .idx{flex:0 0 auto;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--accent);
+    width:38px;height:38px;border-radius:10px;background:var(--accent-soft);border:1px solid var(--line-2);
     display:grid;place-items:center}
-  .flow b{font-weight:700}
+  .evo.wide{grid-column:1 / -1}
+  .evo b{color:var(--ink);font-weight:600}
+  .evo.feat{border-color:rgba(139,147,255,.55);box-shadow:0 0 0 1px rgba(139,147,255,.35),0 0 26px rgba(94,106,210,.28)}
+  .evo.feat .idx{background:var(--accent-2);color:#fff;border-color:transparent}
+  .evo .tagline{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);border:1px solid var(--line-2);border-radius:6px;padding:1px 7px;margin-left:8px;vertical-align:middle}
 
-  figure{margin:26px 0;background:#fffdf8;border:1px solid var(--line);border-radius:12px;padding:18px}
-  @media (prefers-color-scheme:dark){figure{background:#f7f3ea}}
-  figure img{width:100%;height:auto;display:block}
-  figcaption{font-size:13px;color:var(--muted);text-align:center;margin-top:10px;font-family:var(--sans)}
-  @media (prefers-color-scheme:dark){figcaption{color:#6b6456}}
+  ul.plain{padding-left:22px}
+  ul.plain li{margin:8px 0}
+  ul.plain li::marker{color:var(--accent)}
+  ul.split{columns:2;column-gap:40px;padding-left:0;list-style:none;margin:22px 0}
+  ul.split li{margin:0 0 14px;padding-left:22px;position:relative;break-inside:avoid}
+  ul.split li::before{content:"";position:absolute;left:4px;top:11px;width:6px;height:6px;border-radius:50%;background:var(--accent-2)}
 
-  .decision{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
-    border-radius:8px;padding:4px 20px;margin:16px 0}
-  .decision h3{margin:16px 0 2px}
-
-  ul.plain{padding-left:20px}
-  ul.plain li{margin:7px 0}
+  /* api reference */
+  .colhead{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600}
+  .errlist{list-style:none;padding:0;margin:20px 0;display:grid;gap:10px}
+  .errlist li{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;padding:13px 16px}
+  .errlist .tag{font-family:var(--mono);font-size:12.5px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;
+    background:var(--err-soft);color:var(--err);border:1px solid var(--line-2)}
 
   /* demo */
-  .demo{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin:22px 0}
-  .demo .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .demo{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;margin:26px 0;box-shadow:var(--shadow-card)}
+  .demo .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
   .demo label{font-size:13px;color:var(--muted);font-family:var(--mono)}
-  .demo input[type=text]{font-family:var(--mono);font-size:13px;padding:7px 10px;border:1px solid var(--line);
-    border-radius:7px;background:var(--bg);color:var(--ink);min-width:220px;flex:1}
-  .presets{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
-  .presets button{font-family:var(--sans);font-size:12.5px;padding:6px 11px;border:1px solid var(--line);
-    background:var(--bg);color:var(--ink);border-radius:999px;cursor:pointer}
-  .presets button:hover{border-color:var(--accent);color:var(--accent)}
-  .demo textarea{width:100%;font-family:var(--mono);font-size:13px;line-height:1.5;padding:13px;border:1px solid var(--line);
-    border-radius:9px;background:var(--code-bg);color:var(--ink);min-height:210px;resize:vertical}
-  .send{margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .send button{font-family:var(--sans);font-weight:600;font-size:14px;padding:9px 22px;border:0;border-radius:9px;
-    background:var(--accent);color:#fff;cursor:pointer}
-  .send button:hover{filter:brightness(1.08)}
+  .demo input[type=text]{font-family:var(--mono);font-size:13px;padding:8px 11px;border:1px solid var(--line-2);
+    border-radius:8px;background:var(--code-bg);color:var(--ink);min-width:220px;flex:1}
+  .demo input[type=text]:focus{outline:0;border-color:var(--accent-2);box-shadow:0 0 0 3px var(--accent-soft)}
+  .presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+  .presets button{font-family:var(--sans);font-size:12.5px;font-weight:500;padding:6px 12px;border:1px solid var(--line-2);
+    background:var(--panel-2);color:var(--body);border-radius:999px;cursor:pointer;transition:.12s}
+  .presets button:hover{border-color:var(--accent-2);color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .demo textarea{width:100%;font-family:var(--mono);font-size:13px;line-height:1.55;padding:15px;border:1px solid var(--line-2);
+    border-radius:12px;background:var(--code-bg);color:var(--code-ink);min-height:230px;resize:vertical}
+  .demo textarea:focus{outline:0;border-color:var(--accent-2);box-shadow:0 0 0 3px var(--accent-soft)}
+  .send{margin-top:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .send button{font-family:var(--sans);font-weight:600;font-size:14px;padding:10px 24px;border:0;border-radius:9px;
+    background:var(--accent-2);color:#fff;cursor:pointer;box-shadow:var(--shadow-btn);transition:.14s}
+  .send button:hover{background:#6b77e0;transform:translateY(-1px)}
   .send .hint{font-size:12.5px;color:var(--muted)}
-  .resp{margin-top:16px}
+  .resp{margin-top:18px}
   .statusline{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;font-weight:700;
-    padding:6px 13px;border-radius:8px;margin-bottom:10px}
-  .st-ok{background:var(--ok-soft);color:var(--ok)}
-  .st-warn-dot{color:var(--warn)}
+    padding:6px 13px;border-radius:8px;margin-bottom:10px;border:1px solid var(--line-2)}
+  .st-ok,.st-2xx{background:var(--ok-soft);color:var(--ok)}
   .st-err{background:var(--err-soft);color:var(--err)}
-  .st-2xx{background:var(--ok-soft);color:var(--ok)}
-  .driftnote{font-size:13px;color:var(--warn);background:var(--warn-soft);border-radius:7px;padding:8px 12px;
+  .driftnote{font-size:13px;color:var(--warn);background:var(--warn-soft);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;
     margin-bottom:10px;font-family:var(--mono)}
 
-  footer{margin:64px 0 48px;padding-top:22px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+  footer{margin:80px 0 60px;padding-top:28px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
   footer a{font-weight:600}
 
   .zh{display:none}
   html[lang="zh-Hant"] .zh{display:revert}
   html[lang="zh-Hant"] .en{display:none}
   html[lang="zh-Hant"] body{font-size:16.5px}
-  html[lang="zh-Hant"] h1,html[lang="zh-Hant"] h2{font-family:var(--sans);font-weight:800}
+  html[lang="zh-Hant"] h1,html[lang="zh-Hant"] h2{font-weight:700;letter-spacing:-.01em}
+
+  @media (max-width:900px){
+    .hero-grid{grid-template-columns:1fr;gap:34px}
+    .flow{grid-template-columns:repeat(2,1fr)}
+    .metrics{grid-template-columns:repeat(2,1fr)}
+    .grid2,.evo-grid{grid-template-columns:1fr}
+    .evo.wide{grid-column:auto}
+  }
+  @media (max-width:640px){
+    .wrap{padding:0 20px}
+    h1{font-size:2.4rem}
+    h2{font-size:1.6rem}
+    .flow{grid-template-columns:1fr}
+    .metrics{grid-template-columns:1fr}
+    ul.split{columns:1}
+    header.hero .wrap{padding-top:56px;padding-bottom:56px}
+  }
 </style>
 </head>
 <body>
@@ -127,94 +210,131 @@
   </span>
 </div></div>
 
+<header class="hero"><div class="wrap">
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="en">FastAPI · Data Integration</span><span class="zh">FastAPI · 資料整合</span></p>
+      <h1><span class="en">Shipment Ingestion Service</span><span class="zh">出貨事件接收服務</span></h1>
+      <p class="lede">
+        <span class="en">A lightweight FastAPI service that ingests shipment events published by a warehouse system — it authenticates the caller, validates the payload, enforces a business rule, and forwards the clean event downstream for reporting and analytics.</span>
+        <span class="zh">一個小型的 FastAPI 服務。倉庫把貨出掉後會發出一筆「出貨事件」,這個服務負責接住它:先確認來源身分,再檢查資料對不對,套用一條商業規則,最後把乾淨的事件轉給下游做報表與分析。</span>
+      </p>
+      <div class="badges">
+        <span class="badge">Python 3.11+</span><span class="badge">FastAPI</span><span class="badge">Pydantic v2</span>
+        <span class="badge">pytest</span><span class="badge">GitHub Actions CI</span>
+      </div>
+      <div class="herolinks">
+        <a href="https://github.com/srichsun/shipment-ingestion-service">GitHub repo →</a>
+        <a href="#demo"><span class="en">Jump to live demo ↓</span><span class="zh">直接玩互動 demo ↓</span></a>
+      </div>
+    </div>
+    <aside class="codecard">
+      <div class="codecard-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="codecard-title">POST /v1/shipments</span>
+      </div>
+<pre>{
+  "fulfillment_id": "FUL_99821",
+  "order_id": "ORD-12345",
+  "status": "shipped",
+  "tracking_number": "1Z999AA10123456784",
+  "carrier": "UPS",
+  "shipped_items": [
+    { "order_item_id": "ITEM-10001",
+      "sku": "BLUE-SHIRT-S",
+      "quantity_shipped": 2 }
+  ]
+}</pre>
+    </aside>
+  </div>
+</div></header>
+
 <div class="wrap">
 
-<header class="hero">
-  <p class="eyebrow"><span class="en">FastAPI · Data Integration</span><span class="zh">FastAPI · 資料整合</span></p>
-  <h1><span class="en">Shipment Ingestion Service</span><span class="zh">出貨事件接收服務</span></h1>
-  <p class="lede">
-    <span class="en">A lightweight FastAPI service that ingests shipment events published by a warehouse system — it authenticates the caller, validates the payload, enforces a business rule, and forwards the clean event downstream for reporting and analytics.</span>
-    <span class="zh">一個小型的 FastAPI 服務。倉庫把貨出掉後會發出一筆「出貨事件」,這個服務負責接住它:先確認來源身分,再檢查資料對不對,套用一條商業規則,最後把乾淨的事件轉給下游做報表與分析。</span>
-  </p>
-  <div class="badges">
-    <span class="badge">Python 3.11+</span><span class="badge">FastAPI</span><span class="badge">Pydantic v2</span>
-    <span class="badge">pytest</span><span class="badge">GitHub Actions CI</span>
+<section>
+  <div class="metrics">
+    <div class="metric m-blue"><div class="num">5</div><div class="k"><span class="en">Pipeline steps</span><span class="zh">流程關卡</span></div><div class="s"><span class="en">auth → validate → rule → forward → ack</span><span class="zh">驗身分 → 驗資料 → 商規 → 轉發 → 回覆</span></div></div>
+    <div class="metric m-purple"><div class="num">1</div><div class="k"><span class="en">Error envelope</span><span class="zh">統一錯誤信封</span></div><div class="s"><span class="en">every error, one machine-readable shape</span><span class="zh">每種錯誤同一結構,可機讀</span></div></div>
+    <div class="metric m-amber"><div class="num">422</div><div class="k"><span class="en">Not 400</span><span class="zh">不是 400</span></div><div class="s"><span class="en">well-formed but unprocessable, by design</span><span class="zh">格式對但不能處理,刻意選的</span></div></div>
+    <div class="metric m-green"><div class="num">✓</div><div class="k"><span class="en">CI · tests pass</span><span class="zh">CI · 測試綠</span></div><div class="s"><span class="en">lint + pytest on every push</span><span class="zh">每次 push 跑 lint + pytest</span></div></div>
+    <div class="metric m-cyan"><div class="num">0</div><div class="k"><span class="en">Unhandled 500s</span><span class="zh">意外的 500</span></div><div class="s"><span class="en">auth, schema &amp; business errors all typed</span><span class="zh">身分、格式、商規錯誤都有型別</span></div></div>
   </div>
-  <div class="herolinks">
-    <a href="https://github.com/srichsun/shipment-ingestion-service">GitHub repo →</a>
-    <a href="#demo"><span class="en">Jump to live demo ↓</span><span class="zh">直接玩互動 demo ↓</span></a>
+</section>
+
+<section>
+  <p class="section-kicker"><span class="en">The flow</span><span class="zh">流程</span></p>
+  <h2><span class="en">One entry point, five steps</span><span class="zh">一個進入點,五個步驟</span></h2>
+  <p class="prose">
+    <span class="en"><code>POST /v1/shipments</code> is the single entry point. Every request flows through the same pipeline:</span>
+    <span class="zh">只有一個進入點:<code>POST /v1/shipments</code>。每一筆請求都照順序走過這幾關:</span>
+  </p>
+  <ol class="flow">
+    <li><span class="en"><b>Authenticate</b> the caller via an <code>X-API-Key</code> header.</span><span class="zh"><b>確認身分</b>:檢查 <code>X-API-Key</code> 這個 header。</span></li>
+    <li><span class="en"><b>Validate</b> the payload structurally — types, enums, field constraints.</span><span class="zh"><b>檢查資料</b>:型別、選項、欄位規則對不對。</span></li>
+    <li><span class="en"><b>Apply business rules</b> — a <code>shipped</code> event must carry a tracking number.</span><span class="zh"><b>套商業規則</b>:狀態是 <code>shipped</code> 就一定要有追蹤號。</span></li>
+    <li><span class="en"><b>Forward</b> the validated event downstream (mocked with a log line).</span><span class="zh"><b>往下游送</b>:把驗過的事件轉出去(這裡用一行 log 代替真的呼叫)。</span></li>
+    <li><span class="en"><b>Acknowledge</b> with <code>202 Accepted</code> and a <code>correlation_id</code> for tracing.</span><span class="zh"><b>回覆</b>:回 <code>202 Accepted</code>,附一個 <code>correlation_id</code> 方便之後追。</span></li>
+  </ol>
+
+  <figure>
+    <img src="architecture.svg" alt="System flow diagram">
+    <figcaption><span class="en">Request lifecycle — from warehouse to downstream platform.</span><span class="zh">請求的一生——從倉庫到下游平台。</span></figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="section-kicker"><span class="en">Design decisions</span><span class="zh">設計取捨</span></p>
+  <h2><span class="en">Why it's built this way</span><span class="zh">為什麼這樣設計</span></h2>
+  <div class="grid2">
+    <div class="decision">
+      <h3><span class="en">Structural vs business validation</span><span class="zh">結構問題 vs 商業問題</span></h3>
+      <p>
+        <span class="en">Structural checks (types, the <code>status</code>/<code>carrier</code> enums, <code>quantity_shipped&nbsp;&gt;&nbsp;0</code>, non-empty required strings) are enforced by Pydantic. The cross-field business rule — a <code>shipped</code> event must have a tracking number — lives separately in the endpoint. Both return <b>422</b> (well-formed but not processable in this state) and are told apart by the <code>code</code>, not the status: a <code>400</code> would wrongly suggest a malformed request. They stay in separate layers because they change for different reasons — structural rules follow the data format, business rules follow the business process — so a new business rule never disturbs the schema. Neither ever leaks out as an unexpected <code>500</code>.</span>
+        <span class="zh">結構的檢查(型別、<code>status</code>/<code>carrier</code> 選項、<code>quantity_shipped&nbsp;&gt;&nbsp;0</code>、非空的必填欄位)交給 Pydantic。而「<code>shipped</code> 一定要有追蹤號」這種要看好幾個欄位、跟業務有關的規則,我放在 endpoint 自己處理。兩種都回 <b>422</b>(資料格式沒問題,只是這個狀態不能處理),靠 <code>code</code> 分辨、不靠狀態碼——因為回 <code>400</code> 會讓對方誤以為是格式壞掉。它們分在不同層,因為改的原因不一樣:結構跟著資料長相走,商業跟著業務規定走,加新商業規則不會動到資料結構。兩種也都不會不小心變成 <code>500</code>。</span>
+      </p>
+    </div>
+    <div class="decision">
+      <h3><span class="en">One error envelope</span><span class="zh">錯誤都長同一個樣子</span></h3>
+      <p>
+        <span class="en">The API is consumed by machines, so every error returns the same shape — <code>{"error": {"code", "message"}}</code> (plus <code>details</code> for validation) — with a stable, machine-readable <code>code</code>. Callers write one error handler and branch on <code>code</code> rather than brittle string matching. FastAPI's default <code>422</code> is reshaped into this envelope so 401 / 422 stay consistent.</span>
+        <span class="zh">這個 API 是給程式打的,不是給人看的。所以每種錯誤都回一樣的結構——<code>{"error": {"code", "message"}}</code>(驗證錯的話再多一個 <code>details</code>),而且有一個固定、機器可讀的 <code>code</code>。這樣對方寫一套錯誤處理、看 <code>code</code> 判斷就好,不用去比對容易壞的字串。FastAPI 預設的 <code>422</code> 我也改成同一個樣子,讓錯誤一致。</span>
+      </p>
+    </div>
+    <div class="decision">
+      <h3><span class="en">Constant-time authentication</span><span class="zh">身分驗證</span></h3>
+      <p>
+        <span class="en">The API key is read from the <code>API_KEY</code> environment variable and compared with <code>secrets.compare_digest</code> (constant-time, to avoid a timing attack). A missing header and an invalid key both return <code>401</code> with the same message, so the response never reveals which part failed.</span>
+        <span class="zh">API key 從 <code>API_KEY</code> 環境變數讀,用 <code>secrets.compare_digest</code> 比對(固定時間,避免被 timing attack 猜出來)。沒帶 header 跟帶錯 key 都回一樣的 <code>401</code>、訊息也一樣,不會透露到底是哪邊出錯。</span>
+      </p>
+    </div>
+    <div class="decision">
+      <h3><span class="en">Tolerant Reader for unknown fields</span><span class="zh">多出來的欄位不擋,但會記下來</span></h3>
+      <p>
+        <span class="en">Unknown fields are accepted rather than rejected, so upstream systems can evolve their schema without breaking ingestion. Accepted extras are logged as a schema-drift signal instead of being silently dropped.</span>
+        <span class="zh">對方多送了我沒定義的欄位時,我選擇收下、不擋掉,這樣上游改自己的格式時不會害我這邊壞掉。但我會把這些欄位寫進 log,當作「格式好像變了」的提醒,而不是默默丟掉。</span>
+      </p>
+    </div>
+    <div class="decision">
+      <h3><span class="en">Acknowledge with 202 + correlation id</span><span class="zh">回覆用 202 + correlation id</span></h3>
+      <p>
+        <span class="en">Success returns <code>202 Accepted</code> — the service accepts the event for downstream processing rather than creating a queryable resource — with the <code>fulfillment_id</code> for reconciliation and a generated <code>correlation_id</code> that also appears in the logs, so a single event can be traced end to end.</span>
+        <span class="zh">成功回 <code>202 Accepted</code>,意思是「我收下了、會往下游處理」,而不是「我建了一筆你可以再查的資料」。回覆帶 <code>fulfillment_id</code> 方便對帳,還有一個 <code>correlation_id</code>——這個 id 也會出現在 log 裡,所以一筆事件可以從頭追到尾。</span>
+      </p>
+    </div>
   </div>
-</header>
+</section>
 
-<p class="section-kicker"><span class="en">The flow</span><span class="zh">流程</span></p>
-<h2><span class="en">One entry point, five steps</span><span class="zh">一個進入點,五個步驟</span></h2>
-<p>
-  <span class="en"><code>POST /v1/shipments</code> is the single entry point. Every request flows through the same pipeline:</span>
-  <span class="zh">只有一個進入點:<code>POST /v1/shipments</code>。每一筆請求都照順序走過這幾關:</span>
-</p>
-<ol class="flow">
-  <li><span class="en"><b>Authenticate</b> the caller via an <code>X-API-Key</code> header.</span><span class="zh"><b>確認身分</b>:檢查 <code>X-API-Key</code> 這個 header。</span></li>
-  <li><span class="en"><b>Validate</b> the payload structurally — types, enums, field constraints.</span><span class="zh"><b>檢查資料</b>:型別、選項、欄位規則對不對。</span></li>
-  <li><span class="en"><b>Apply business rules</b> — a <code>shipped</code> event must carry a tracking number.</span><span class="zh"><b>套商業規則</b>:狀態是 <code>shipped</code> 就一定要有追蹤號。</span></li>
-  <li><span class="en"><b>Forward</b> the validated event downstream (mocked with a log line).</span><span class="zh"><b>往下游送</b>:把驗過的事件轉出去(這裡用一行 log 代替真的呼叫)。</span></li>
-  <li><span class="en"><b>Acknowledge</b> with <code>202 Accepted</code> and a <code>correlation_id</code> for tracing.</span><span class="zh"><b>回覆</b>:回 <code>202 Accepted</code>,附一個 <code>correlation_id</code> 方便之後追。</span></li>
-</ol>
-
-<figure>
-  <img src="architecture.svg" alt="System flow diagram">
-  <figcaption><span class="en">Request lifecycle — from warehouse to downstream platform.</span><span class="zh">請求的一生——從倉庫到下游平台。</span></figcaption>
-</figure>
-
-<p class="section-kicker"><span class="en">Design decisions</span><span class="zh">設計取捨</span></p>
-<h2><span class="en">Why it's built this way</span><span class="zh">為什麼這樣設計</span></h2>
-
-<div class="decision">
-  <h3><span class="en">Structural vs business validation</span><span class="zh">結構問題 vs 商業問題</span></h3>
-  <p>
-    <span class="en">Structural checks (types, the <code>status</code>/<code>carrier</code> enums, <code>quantity_shipped&nbsp;&gt;&nbsp;0</code>, non-empty required strings) are enforced by Pydantic. The cross-field business rule — a <code>shipped</code> event must have a tracking number — lives separately in the endpoint. Both return <b>422</b> (well-formed but not processable in this state) and are told apart by the <code>code</code>, not the status: a <code>400</code> would wrongly suggest a malformed request. They stay in separate layers because they change for different reasons — structural rules follow the data format, business rules follow the business process — so a new business rule never disturbs the schema. Neither ever leaks out as an unexpected <code>500</code>.</span>
-    <span class="zh">結構的檢查(型別、<code>status</code>/<code>carrier</code> 選項、<code>quantity_shipped&nbsp;&gt;&nbsp;0</code>、非空的必填欄位)交給 Pydantic。而「<code>shipped</code> 一定要有追蹤號」這種要看好幾個欄位、跟業務有關的規則,我放在 endpoint 自己處理。兩種都回 <b>422</b>(資料格式沒問題,只是這個狀態不能處理),靠 <code>code</code> 分辨、不靠狀態碼——因為回 <code>400</code> 會讓對方誤以為是格式壞掉。它們分在不同層,因為改的原因不一樣:結構跟著資料長相走,商業跟著業務規定走,加新商業規則不會動到資料結構。兩種也都不會不小心變成 <code>500</code>。</span>
+<section>
+  <p class="section-kicker"><span class="en">API reference</span><span class="zh">API 參考</span></p>
+  <h2><span class="en">The contract</span><span class="zh">介面規格</span></h2>
+  <h3><code>POST /v1/shipments</code></h3>
+  <p class="prose">
+    <span class="en">Header <code>X-API-Key</code> is required. The body is a nested JSON shipment event:</span>
+    <span class="zh">必帶 header <code>X-API-Key</code>。Body 是巢狀 JSON 的出貨事件:</span>
   </p>
-</div>
-
-<div class="decision">
-  <h3><span class="en">One error envelope</span><span class="zh">錯誤都長同一個樣子</span></h3>
-  <p>
-    <span class="en">The API is consumed by machines, so every error returns the same shape — <code>{"error": {"code", "message"}}</code> (plus <code>details</code> for validation) — with a stable, machine-readable <code>code</code>. Callers write one error handler and branch on <code>code</code> rather than brittle string matching. FastAPI's default <code>422</code> is reshaped into this envelope so 401 / 422 stay consistent.</span>
-    <span class="zh">這個 API 是給程式打的,不是給人看的。所以每種錯誤都回一樣的結構——<code>{"error": {"code", "message"}}</code>(驗證錯的話再多一個 <code>details</code>),而且有一個固定、機器可讀的 <code>code</code>。這樣對方寫一套錯誤處理、看 <code>code</code> 判斷就好,不用去比對容易壞的字串。FastAPI 預設的 <code>422</code> 我也改成同一個樣子,讓錯誤一致。</span>
-  </p>
-</div>
-
-<div class="decision">
-  <h3><span class="en">Constant-time authentication</span><span class="zh">身分驗證</span></h3>
-  <p>
-    <span class="en">The API key is read from the <code>API_KEY</code> environment variable and compared with <code>secrets.compare_digest</code> (constant-time, to avoid a timing attack). A missing header and an invalid key both return <code>401</code> with the same message, so the response never reveals which part failed.</span>
-    <span class="zh">API key 從 <code>API_KEY</code> 環境變數讀,用 <code>secrets.compare_digest</code> 比對(固定時間,避免被 timing attack 猜出來)。沒帶 header 跟帶錯 key 都回一樣的 <code>401</code>、訊息也一樣,不會透露到底是哪邊出錯。</span>
-  </p>
-</div>
-
-<div class="decision">
-  <h3><span class="en">Tolerant Reader for unknown fields</span><span class="zh">多出來的欄位不擋,但會記下來</span></h3>
-  <p>
-    <span class="en">Unknown fields are accepted rather than rejected, so upstream systems can evolve their schema without breaking ingestion. Accepted extras are logged as a schema-drift signal instead of being silently dropped.</span>
-    <span class="zh">對方多送了我沒定義的欄位時,我選擇收下、不擋掉,這樣上游改自己的格式時不會害我這邊壞掉。但我會把這些欄位寫進 log,當作「格式好像變了」的提醒,而不是默默丟掉。</span>
-  </p>
-</div>
-
-<div class="decision">
-  <h3><span class="en">Acknowledge with 202 + correlation id</span><span class="zh">回覆用 202 + correlation id</span></h3>
-  <p>
-    <span class="en">Success returns <code>202 Accepted</code> — the service accepts the event for downstream processing rather than creating a queryable resource — with the <code>fulfillment_id</code> for reconciliation and a generated <code>correlation_id</code> that also appears in the logs, so a single event can be traced end to end.</span>
-    <span class="zh">成功回 <code>202 Accepted</code>,意思是「我收下了、會往下游處理」,而不是「我建了一筆你可以再查的資料」。回覆帶 <code>fulfillment_id</code> 方便對帳,還有一個 <code>correlation_id</code>——這個 id 也會出現在 log 裡,所以一筆事件可以從頭追到尾。</span>
-  </p>
-</div>
-
-<p class="section-kicker"><span class="en">API reference</span><span class="zh">API 參考</span></p>
-<h2><span class="en">The contract</span><span class="zh">介面規格</span></h2>
-<h3><code>POST /v1/shipments</code></h3>
-<p>
-  <span class="en">Header <code>X-API-Key</code> is required. The body is a nested JSON shipment event:</span>
-  <span class="zh">必帶 header <code>X-API-Key</code>。Body 是巢狀 JSON 的出貨事件:</span>
-</p>
+  <div class="grid2">
+    <div>
+      <p class="colhead"><span class="en">Request body</span><span class="zh">請求 body</span></p>
 <pre>{
   "fulfillment_id": "FUL_99821",
   "order_id": "ORD-12345",
@@ -227,78 +347,89 @@
     { "order_item_id": "ITEM-10002", "sku": "RED-HAT-OS", "quantity_shipped": 1 }
   ]
 }</pre>
-<p><span class="en"><b>Success</b> — <code>202 Accepted</code>:</span><span class="zh"><b>成功</b> — <code>202 Accepted</code>:</span></p>
+    </div>
+    <div>
+      <p class="colhead"><span class="en">Success · 202 Accepted</span><span class="zh">成功 · 202 Accepted</span></p>
 <pre>{
   "status": "accepted",
   "fulfillment_id": "FUL_99821",
   "correlation_id": "9f1c0b8e4d2a4f7e8b1c2d3e4f5a6b7c"
 }</pre>
-<p><span class="en"><b>Errors</b> — one envelope, told apart by <code>code</code>:</span><span class="zh"><b>錯誤</b> — 統一信封,靠 <code>code</code> 分辨:</span></p>
-<ul class="plain">
-  <li><code>401 · UNAUTHORIZED</code> — <span class="en"><code>X-API-Key</code> missing or invalid.</span><span class="zh"><code>X-API-Key</code> 沒帶或帶錯。</span></li>
-  <li><code>422 · VALIDATION_ERROR</code> — <span class="en">schema / type / field errors (<code>details</code> lists them).</span><span class="zh">型別／欄位錯(<code>details</code> 會列出哪裡錯)。</span></li>
-  <li><code>422 · MISSING_TRACKING_NUMBER</code> — <span class="en"><code>status = shipped</code> but no tracking number.</span><span class="zh"><code>status = shipped</code> 卻沒有追蹤號。</span></li>
-</ul>
-
-<p class="section-kicker">Live demo</p>
-<h2 id="demo"><span class="en">Try it in the browser</span><span class="zh">在瀏覽器直接試</span></h2>
-<p>
-  <span class="en">This runs the exact same validation logic client-side — no server. Pick a scenario or edit the payload, then send. The demo API key is <code>demo-secret-key</code>.</span>
-  <span class="zh">這裡在瀏覽器裡跑跟後端一模一樣的驗證邏輯(沒有真的伺服器)。挑一個情境、或直接改 payload,再送出。demo 的 API key 是 <code>demo-secret-key</code>。</span>
-</p>
-
-<div class="demo">
-  <div class="row">
-    <label for="apikey">X-API-Key</label>
-    <input id="apikey" type="text" value="demo-secret-key" spellcheck="false">
+    </div>
   </div>
-  <div class="presets">
-    <button onclick="preset('valid')"><span class="en">✅ Valid shipped</span><span class="zh">✅ 正常出貨</span></button>
-    <button onclick="preset('drift')"><span class="en">⚠️ Unknown field</span><span class="zh">⚠️ 多送欄位</span></button>
-    <button onclick="preset('notrack')"><span class="en">❌ Missing tracking</span><span class="zh">❌ 缺追蹤號</span></button>
-    <button onclick="preset('enum')"><span class="en">❌ Bad carrier</span><span class="zh">❌ 貨運商錯</span></button>
-    <button onclick="preset('qty')"><span class="en">❌ Quantity = 0</span><span class="zh">❌ 數量 0</span></button>
-    <button onclick="preset('empty')"><span class="en">❌ Empty field</span><span class="zh">❌ 空字串</span></button>
-    <button onclick="preset('badkey')"><span class="en">🔒 Wrong key</span><span class="zh">🔒 key 錯</span></button>
-  </div>
-  <textarea id="payload" spellcheck="false"></textarea>
-  <div class="send">
-    <button onclick="send()">POST /v1/shipments</button>
-    <span class="hint"><span class="en">Response appears below.</span><span class="zh">回應會出現在下面。</span></span>
-  </div>
-  <div class="resp" id="resp"></div>
-</div>
+  <p><span class="en"><b>Errors</b> — one envelope, told apart by <code>code</code>:</span><span class="zh"><b>錯誤</b> — 統一信封,靠 <code>code</code> 分辨:</span></p>
+  <ul class="errlist">
+    <li><span class="tag">401 · UNAUTHORIZED</span> <span class="en"><code>X-API-Key</code> missing or invalid.</span><span class="zh"><code>X-API-Key</code> 沒帶或帶錯。</span></li>
+    <li><span class="tag">422 · VALIDATION_ERROR</span> <span class="en">schema / type / field errors (<code>details</code> lists them).</span><span class="zh">型別／欄位錯(<code>details</code> 會列出哪裡錯)。</span></li>
+    <li><span class="tag">422 · MISSING_TRACKING_NUMBER</span> <span class="en"><code>status = shipped</code> but no tracking number.</span><span class="zh"><code>status = shipped</code> 卻沒有追蹤號。</span></li>
+  </ul>
+</section>
 
-<p class="section-kicker"><span class="en">Run it locally</span><span class="zh">本機執行</span></p>
-<h2><span class="en">Clone &amp; run</span><span class="zh">跑起來</span></h2>
+<section>
+  <p class="section-kicker">Live demo</p>
+  <h2 id="demo"><span class="en">Try it in the browser</span><span class="zh">在瀏覽器直接試</span></h2>
+  <p class="prose">
+    <span class="en">This runs the exact same validation logic client-side — no server. Pick a scenario or edit the payload, then send. The demo API key is <code>demo-secret-key</code>.</span>
+    <span class="zh">這裡在瀏覽器裡跑跟後端一模一樣的驗證邏輯(沒有真的伺服器)。挑一個情境、或直接改 payload,再送出。demo 的 API key 是 <code>demo-secret-key</code>。</span>
+  </p>
+
+  <div class="demo">
+    <div class="row">
+      <label for="apikey">X-API-Key</label>
+      <input id="apikey" type="text" value="demo-secret-key" spellcheck="false">
+    </div>
+    <div class="presets">
+      <button onclick="preset('valid')"><span class="en">✅ Valid shipped</span><span class="zh">✅ 正常出貨</span></button>
+      <button onclick="preset('drift')"><span class="en">⚠️ Unknown field</span><span class="zh">⚠️ 多送欄位</span></button>
+      <button onclick="preset('notrack')"><span class="en">❌ Missing tracking</span><span class="zh">❌ 缺追蹤號</span></button>
+      <button onclick="preset('enum')"><span class="en">❌ Bad carrier</span><span class="zh">❌ 貨運商錯</span></button>
+      <button onclick="preset('qty')"><span class="en">❌ Quantity = 0</span><span class="zh">❌ 數量 0</span></button>
+      <button onclick="preset('empty')"><span class="en">❌ Empty field</span><span class="zh">❌ 空字串</span></button>
+      <button onclick="preset('badkey')"><span class="en">🔒 Wrong key</span><span class="zh">🔒 key 錯</span></button>
+    </div>
+    <textarea id="payload" spellcheck="false"></textarea>
+    <div class="send">
+      <button onclick="send()">POST /v1/shipments</button>
+      <span class="hint"><span class="en">Response appears below.</span><span class="zh">回應會出現在下面。</span></span>
+    </div>
+    <div class="resp" id="resp"></div>
+  </div>
+</section>
+
+<section>
+  <p class="section-kicker"><span class="en">Run it locally</span><span class="zh">本機執行</span></p>
+  <h2><span class="en">Clone &amp; run</span><span class="zh">跑起來</span></h2>
 <pre>python -m venv .venv &amp;&amp; source .venv/bin/activate
 pip install -r requirements-dev.txt
 export API_KEY=dev-local-key          # or put it in .env
 uvicorn app.main:app --reload         # interactive docs at /docs
 pytest                                # run the tests</pre>
+</section>
 
-<p class="section-kicker"><span class="en">Scope</span><span class="zh">範圍</span></p>
-<h2><span class="en">Assumptions & evolution</span><span class="zh">假設與演進方向</span></h2>
-<h3><span class="en">Assumptions (kept scope tight)</span><span class="zh">假設(把範圍收緊)</span></h3>
-<ul class="plain">
-  <li><span class="en">A single API key via <code>API_KEY</code>; per-client keys are out of scope.</span><span class="zh">只有一把 API key,用 <code>API_KEY</code> 提供;每個客戶一把先不做。</span></li>
-  <li><span class="en">A "valid" tracking number means non-empty; carrier-specific formats (UPS <code>1Z…</code>) were left out.</span><span class="zh">「有效」的追蹤號先當成非空字串;各家貨運商的格式(UPS <code>1Z…</code>)先不管。</span></li>
-  <li><span class="en">Only <code>status = shipped</code> requires a tracking number; the carrier allowlist is fixed.</span><span class="zh">只有 <code>status = shipped</code> 需要追蹤號;貨運商清單固定。</span></li>
-  <li><span class="en">The payload is treated as one canonical format (the sample). Genuinely different per-warehouse formats would need per-source adapters — see Evolution.</span><span class="zh">把 payload 當成一種 canonical 格式(就是範例那個)處理。各倉庫真的不同格式,需要 per-source adapter——見下面「演進方向」。</span></li>
-  <li><span class="en"><code>shipped_at</code> is accepted as any valid timestamp — not range-checked (past / future), and not required even when <code>status = shipped</code>.</span><span class="zh"><code>shipped_at</code> 只要是合法時間就收——沒檢查是不是未來 / 太久以前,<code>status = shipped</code> 時也沒強制要填。</span></li>
-  <li><span class="en">No persistence — the downstream integration is mocked, per the brief.</span><span class="zh">沒有資料庫——往下游送用 mock 代替,這也是題目本來的意思。</span></li>
-</ul>
-<h3><span class="en">Evolution — how it would grow</span><span class="zh">演進方向——之後會怎麼長</span></h3>
-<p><span class="en">Roughly in priority order — from data correctness to feeding the analytics warehouse.</span><span class="zh">大致按優先順序——從資料正確性,到餵進分析倉儲。</span></p>
-<ul class="plain">
-  <li><span class="en"><b>1 · Handle different source formats.</b> Warehouses send different shapes — a per-source adapter translates each into one internal canonical model, so the validation core is untouched and downstream stays decoupled. (The translation half of an anti-corruption layer.)</span><span class="zh"><b>1 · 接住不同來源的格式。</b>各倉庫送的格式不一樣——每個來源一個 adapter,把它翻成一個內部 canonical model,驗證核心不用動、下游也脫鉤。(anti-corruption layer 的「翻譯」那半。)</span></li>
-  <li><span class="en"><b>2 · Reliability — don't lose, don't double-count.</b> Persist the event before returning <code>202</code> (a crash loses nothing) and dedupe on <code>fulfillment_id</code> with a unique key (a re-send isn't counted twice). A hook already marks where dedup belongs.</span><span class="zh"><b>2 · 可靠性——不遺失、不重複。</b>先把事件存起來再回 <code>202</code>(崩潰也不丟),並用 <code>fulfillment_id</code> 的唯一鍵去重(重送不會算兩次)。程式裡已先留了去重的位置。</span></li>
-  <li><span class="en"><b>3 · Feed the analytics warehouse.</b> Land validated events in S3 and load them into Snowflake (ELT) — this service is the quality gate at the front of that pipeline.</span><span class="zh"><b>3 · 餵進分析倉儲。</b>把驗證過的事件落到 S3、再載入 Snowflake(ELT)——這個服務就是那條管線最前面的品質閘道。</span></li>
-  <li><span class="en"><b>4 · Scale for spikes.</b> A queue between accept and forward absorbs bursts (backpressure); the stateless service scales horizontally, or runs on Lambda for auto-scaling.</span><span class="zh"><b>4 · 撐住尖峰。</b>在收下與轉發之間放 queue 吸掉暴衝(backpressure);無狀態的服務可水平多開,或放 Lambda 自動擴縮。</span></li>
-  <li><span class="en"><b>5 · Multi-tenant.</b> One API key per source (in a table — attributable, revocable), and per-tenant carrier lists as data rather than a fixed enum, editable by the business without a deploy.</span><span class="zh"><b>5 · 多租戶。</b>每個來源一把 key(進資料表——可歸屬、可撤銷),每租戶的貨運商清單改成資料而非固定 enum,業務免部署就能改。</span></li>
-  <li><span class="en"><b>6 · Observability.</b> Alert on schema drift, track metrics (throughput, rejection rate, latency), and propagate the <code>correlation_id</code> downstream so one event can be traced across systems.</span><span class="zh"><b>6 · 可觀測性。</b>對 schema drift 告警、追蹤指標(吞吐量、拒絕率、延遲),並把 <code>correlation_id</code> 帶到下游,讓一筆事件能跨系統追蹤。</span></li>
-  <li><span class="en"><b>Near-term hardening.</b> Upper bounds on quantity, array length, string length and request size; and authenticating in middleware so identity is checked before body validation.</span><span class="zh"><b>短期加固。</b>給數量、陣列長度、字串長度和請求大小設上限;並把驗身分移到 middleware,讓身分在 body 驗證之前就先擋。</span></li>
-</ul>
+<section>
+  <p class="section-kicker"><span class="en">Scope</span><span class="zh">範圍</span></p>
+  <h2><span class="en">Assumptions & evolution</span><span class="zh">假設與演進方向</span></h2>
+  <h3><span class="en">Assumptions (kept scope tight)</span><span class="zh">假設(把範圍收緊)</span></h3>
+  <ul class="split">
+    <li><span class="en">A single API key via <code>API_KEY</code>; per-client keys are out of scope.</span><span class="zh">只有一把 API key,用 <code>API_KEY</code> 提供;每個客戶一把先不做。</span></li>
+    <li><span class="en">A "valid" tracking number means non-empty; carrier-specific formats (UPS <code>1Z…</code>) were left out.</span><span class="zh">「有效」的追蹤號先當成非空字串;各家貨運商的格式(UPS <code>1Z…</code>)先不管。</span></li>
+    <li><span class="en">Only <code>status = shipped</code> requires a tracking number; the carrier allowlist is fixed.</span><span class="zh">只有 <code>status = shipped</code> 需要追蹤號;貨運商清單固定。</span></li>
+    <li><span class="en">The payload is treated as one canonical format (the sample). Genuinely different per-warehouse formats would need per-source adapters — see Evolution.</span><span class="zh">把 payload 當成一種 canonical 格式(就是範例那個)處理。各倉庫真的不同格式,需要 per-source adapter——見下面「演進方向」。</span></li>
+    <li><span class="en"><code>shipped_at</code> is accepted as any valid timestamp — not range-checked (past / future), and not required even when <code>status = shipped</code>.</span><span class="zh"><code>shipped_at</code> 只要是合法時間就收——沒檢查是不是未來 / 太久以前,<code>status = shipped</code> 時也沒強制要填。</span></li>
+    <li><span class="en">No persistence — the downstream integration is mocked, per the brief.</span><span class="zh">沒有資料庫——往下游送用 mock 代替,這也是題目本來的意思。</span></li>
+  </ul>
+  <h3><span class="en">Evolution — how it would grow</span><span class="zh">演進方向——之後會怎麼長</span></h3>
+  <p class="prose"><span class="en">Roughly in priority order — from data correctness to feeding the analytics warehouse.</span><span class="zh">大致按優先順序——從資料正確性,到餵進分析倉儲。</span></p>
+  <div class="evo-grid">
+    <div class="evo feat"><span class="idx">01</span><div><span class="en"><b>Handle different source formats.</b><span class="tagline">Top priority</span> Warehouses send different shapes — a per-source adapter translates each into one internal canonical model, so the validation core is untouched and downstream stays decoupled. (The translation half of an anti-corruption layer.)</span><span class="zh"><b>接住不同來源的格式。</b><span class="tagline">最優先</span>各倉庫送的格式不一樣——每個來源一個 adapter,把它翻成一個內部 canonical model,驗證核心不用動、下游也脫鉤。(anti-corruption layer 的「翻譯」那半。)</span></div></div>
+    <div class="evo"><span class="idx">02</span><div><span class="en"><b>Reliability — don't lose, don't double-count.</b> Persist the event before returning <code>202</code> (a crash loses nothing) and dedupe on <code>fulfillment_id</code> with a unique key (a re-send isn't counted twice). A hook already marks where dedup belongs.</span><span class="zh"><b>可靠性——不遺失、不重複。</b>先把事件存起來再回 <code>202</code>(崩潰也不丟),並用 <code>fulfillment_id</code> 的唯一鍵去重(重送不會算兩次)。程式裡已先留了去重的位置。</span></div></div>
+    <div class="evo"><span class="idx">03</span><div><span class="en"><b>Feed the analytics warehouse.</b> Land validated events in S3 and load them into Snowflake (ELT) — this service is the quality gate at the front of that pipeline.</span><span class="zh"><b>餵進分析倉儲。</b>把驗證過的事件落到 S3、再載入 Snowflake(ELT)——這個服務就是那條管線最前面的品質閘道。</span></div></div>
+    <div class="evo"><span class="idx">04</span><div><span class="en"><b>Scale for spikes.</b> A queue between accept and forward absorbs bursts (backpressure); the stateless service scales horizontally, or runs on Lambda for auto-scaling.</span><span class="zh"><b>撐住尖峰。</b>在收下與轉發之間放 queue 吸掉暴衝(backpressure);無狀態的服務可水平多開,或放 Lambda 自動擴縮。</span></div></div>
+    <div class="evo"><span class="idx">05</span><div><span class="en"><b>Multi-tenant.</b> One API key per source (in a table — attributable, revocable), and per-tenant carrier lists as data rather than a fixed enum, editable by the business without a deploy.</span><span class="zh"><b>多租戶。</b>每個來源一把 key(進資料表——可歸屬、可撤銷),每租戶的貨運商清單改成資料而非固定 enum,業務免部署就能改。</span></div></div>
+    <div class="evo"><span class="idx">06</span><div><span class="en"><b>Observability.</b> Alert on schema drift, track metrics (throughput, rejection rate, latency), and propagate the <code>correlation_id</code> downstream so one event can be traced across systems.</span><span class="zh"><b>可觀測性。</b>對 schema drift 告警、追蹤指標(吞吐量、拒絕率、延遲),並把 <code>correlation_id</code> 帶到下游,讓一筆事件能跨系統追蹤。</span></div></div>
+    <div class="evo wide"><span class="idx">+</span><div><span class="en"><b>Near-term hardening.</b> Upper bounds on quantity, array length, string length and request size; and authenticating in middleware so identity is checked before body validation.</span><span class="zh"><b>短期加固。</b>給數量、陣列長度、字串長度和請求大小設上限;並把驗身分移到 middleware,讓身分在 body 驗證之前就先擋。</span></div></div>
+  </div>
+</section>
 
 <footer>
   <p><span class="en">Personal demo project exploring how to design a robust, evolvable integration service for e-commerce fulfillment.</span><span class="zh">個人 demo 專案,練習把一個電商出貨的整合服務設計得穩一點、也好改一點。</span></p>
