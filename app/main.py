@@ -11,7 +11,10 @@ import logging
 from datetime import datetime
 from enum import Enum
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("shipment_ingestion")
@@ -73,3 +76,56 @@ class ShipmentEvent(BaseModel):
     shipped_items: list[ShippedItem] = Field(min_length=1)
     shipped_at: datetime | None = None
     tracking_number: str | None = None
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    details: list | None = None
+
+
+class ErrorResponse(BaseModel):
+    """The envelope every error shares — declared so the OpenAPI docs show the
+    real error shape instead of FastAPI's default."""
+    error: ErrorDetail
+
+
+# ============================================================
+# Custom Exceptions
+# ============================================================
+
+class APIError(Exception):
+    """An error we return to the caller in a consistent envelope.
+
+    Carries the HTTP status plus a stable machine-readable ``code`` and a
+    human-readable ``message``.
+    """
+
+    def __init__(self, status_code: int, code: str, message: str):
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+
+
+@app.exception_handler(APIError)
+def handle_api_error(request: Request, exc: APIError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Reshape FastAPI's default 422 into the same error envelope, with the
+    per-field problems under ``details``."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request payload failed validation.",
+                "details": jsonable_encoder(exc.errors()),
+            }
+        },
+    )
