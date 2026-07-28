@@ -1,0 +1,20 @@
+{
+  "fulfillment_id": "FUL_99821",
+  "order_id": "ORD-12345",
+  "status": "shipped",
+  "shipped_at": "2026-01-01T10:30:00Z",
+  "tracking_number": "1Z999AA10123456784",
+  "carrier": "UPS",
+  "shipped_items": [
+    {
+      "order_item_id": "ITEM-10001",
+      "sku": "BLUE-SHIRT-S",
+      "quantity_shipped": 2
+    },
+    {
+      "order_item_id": "ITEM-10002",
+      "sku": "RED-HAT-OS",
+      "quantity_shipped": 1
+    }
+  ]
+}

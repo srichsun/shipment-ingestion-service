@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#6b6456"/></marker>
+    <marker id="arwC" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#7a2e34"/></marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="999" height="559" rx="12" fill="#f4f1ea" stroke="#cec8ba"/>
+
+  <text x="36" y="42" font-family="Georgia, serif" font-size="20" fill="#211e18">Shipment ingestion — system flow</text>
+  <text x="36" y="62" font-size="12" fill="#6b6456">Who publishes the event, and where the gate sits.</text>
+
+  <!-- legend -->
+  <g font-size="11.5" fill="#6b6456">
+    <rect x="770" y="30" width="13" height="13" rx="3" fill="#7a2e34"/><text x="790" y="40">This service</text>
+    <rect x="770" y="50" width="13" height="13" rx="3" fill="#ffffff" stroke="#211e18" stroke-width="1.4"/><text x="790" y="60">Own system</text>
+    <rect x="770" y="70" width="13" height="13" rx="3" fill="#ffffff" stroke="#8a6d3f" stroke-width="1.4" stroke-dasharray="3 2"/><text x="790" y="80">Third-party</text>
+  </g>
+
+  <!-- top context row: order -> warehouse -> carrier -->
+  <rect x="90" y="118" width="160" height="52" rx="6" fill="#ffffff" stroke="#211e18" stroke-width="1.4"/>
+  <text x="170" y="144" text-anchor="middle" font-size="13.5" fill="#211e18">Order placed</text>
+  <text x="170" y="160" text-anchor="middle" font-size="10.5" fill="#6b6456">on the storefront</text>
+
+  <rect x="420" y="118" width="160" height="52" rx="6" fill="#ffffff" stroke="#211e18" stroke-width="1.4"/>
+  <text x="500" y="144" text-anchor="middle" font-size="13.5" fill="#211e18">Warehouse</text>
+  <text x="500" y="160" text-anchor="middle" font-size="10.5" fill="#6b6456">WMS or 3PL</text>
+
+  <rect x="750" y="118" width="160" height="52" rx="6" fill="#ffffff" stroke="#8a6d3f" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="830" y="144" text-anchor="middle" font-size="13.5" fill="#211e18">Carrier</text>
+  <text x="830" y="160" text-anchor="middle" font-size="10.5" fill="#6b6456">UPS · FedEx · DHL</text>
+
+  <line x1="250" y1="144" x2="418" y2="144" stroke="#6b6456" stroke-width="1.4" marker-end="url(#arw)"/>
+  <line x1="580" y1="144" x2="748" y2="144" stroke="#6b6456" stroke-width="1.4" marker-end="url(#arw)"/>
+
+  <!-- event: warehouse publishes -> service (straight down) -->
+  <line x1="500" y1="170" x2="500" y2="248" stroke="#7a2e34" stroke-width="1.6" marker-end="url(#arwC)"/>
+  <text x="516" y="208" font-size="11" fill="#7a2e34">warehouse publishes the shipment event</text>
+  <text x="516" y="223" font-size="11" fill="#7a2e34">→ POST /v1/shipments</text>
+
+  <!-- service box -->
+  <rect x="175" y="250" width="650" height="150" rx="10" fill="#fbf1f0" stroke="#7a2e34" stroke-width="2"/>
+  <text x="200" y="284" font-size="10.5" letter-spacing="1.5" fill="#7a2e34">THIS SERVICE · INGESTION GATE</text>
+  <text x="200" y="312" font-family="Georgia, serif" font-size="22" fill="#211e18">Ingestion Service</text>
+
+  <rect x="200" y="330" width="190" height="30" rx="15" fill="#ffffff" stroke="#cec8ba"/>
+  <text x="295" y="350" text-anchor="middle" font-size="11.5" fill="#211e18">① Authenticate → 401</text>
+  <rect x="402" y="330" width="150" height="30" rx="15" fill="#ffffff" stroke="#cec8ba"/>
+  <text x="477" y="350" text-anchor="middle" font-size="11.5" fill="#211e18">② Validate → 422</text>
+  <rect x="564" y="330" width="196" height="30" rx="15" fill="#ffffff" stroke="#cec8ba"/>
+  <text x="662" y="350" text-anchor="middle" font-size="11.5" fill="#211e18">③ Business rule → 422</text>
+
+  <text x="200" y="388" font-size="12.5" fill="#7a2e34">Pass → 202 Accepted + correlation_id</text>
+
+  <!-- fan-out -->
+  <path d="M500,400 L500,420 Q500,428 492,428 L363,428 Q355,428 355,436 L355,446" fill="none" stroke="#6b6456" stroke-width="1.4" marker-end="url(#arw)"/>
+  <path d="M500,400 L500,420 Q500,428 508,428 L637,428 Q645,428 645,436 L645,446" fill="none" stroke="#6b6456" stroke-width="1.4" marker-end="url(#arw)"/>
+
+  <rect x="250" y="448" width="210" height="54" rx="6" fill="#ffffff" stroke="#211e18" stroke-width="1.4"/>
+  <text x="355" y="474" text-anchor="middle" font-size="13.5" fill="#211e18">Operational reporting</text>
+  <text x="355" y="490" text-anchor="middle" font-size="10.5" fill="#6b6456">downstream</text>
+  <rect x="540" y="448" width="210" height="54" rx="6" fill="#ffffff" stroke="#211e18" stroke-width="1.4"/>
+  <text x="645" y="474" text-anchor="middle" font-size="13.5" fill="#211e18">Analytics</text>
+  <text x="645" y="490" text-anchor="middle" font-size="10.5" fill="#6b6456">downstream</text>
+
+  <text x="36" y="532" font-size="11" fill="#6b6456">The warehouse system publishes the event when inventory leaves; the carrier and tracking number travel inside it.</text>
+  <text x="36" y="549" font-size="11" fill="#928a79">Warehouse may be an in-house WMS or an outsourced 3PL — the ownership boundary shifts, the shipment-event contract does not.</text>
+</svg>
