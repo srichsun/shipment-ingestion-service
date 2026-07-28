@@ -8,10 +8,13 @@ Layout follows the four sections below: Data Models, Custom Exceptions,
 External Integration, API Endpoint.
 """
 import logging
+import os
+import secrets
+import uuid
 from datetime import datetime
 from enum import Enum
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Header, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -129,3 +132,87 @@ def handle_validation_error(request: Request, exc: RequestValidationError) -> JS
             }
         },
     )
+
+
+# ============================================================
+# External Integration
+# ============================================================
+
+def forward_to_downstream(event: ShipmentEvent, correlation_id: str) -> None:
+    """Simulate forwarding the validated event to a downstream platform.
+
+    A real integration would POST to an external API here; for this exercise a
+    log line stands in for that call. The correlation id ties this log line to
+    the acknowledgement returned to the caller, so a single event can be traced
+    end to end.
+    """
+    logger.info(
+        "Forwarding shipment to downstream platform "
+        "fulfillment_id=%s correlation_id=%s",
+        event.fulfillment_id,
+        correlation_id,
+    )
+
+
+# ============================================================
+# API Endpoint
+# ============================================================
+
+def authenticate(x_api_key: str) -> None:
+    """Reject the request unless it carries the expected API key."""
+    expected = os.getenv("API_KEY", "")
+    if not expected or not secrets.compare_digest(x_api_key, expected):
+        raise APIError(status.HTTP_401_UNAUTHORIZED, "UNAUTHORIZED", "Invalid or missing API key.")
+
+
+def apply_business_rules(event: ShipmentEvent) -> None:
+    """Enforce cross-field business rules.
+
+    Returns 422 on violation: the payload is well-formed but not processable in
+    this state. It shares the 422 status with schema errors and is told apart by
+    the ``code`` (a 400 would wrongly imply a malformed request).
+    """
+    if event.status == ShipmentStatus.SHIPPED and not event.tracking_number:
+        raise APIError(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "MISSING_TRACKING_NUMBER",
+            "A shipment marked as 'shipped' must include a tracking number.",
+        )
+
+
+@app.post(
+    "/v1/shipments",
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        401: {"model": ErrorResponse, "description": "Missing or invalid API key."},
+        422: {"model": ErrorResponse, "description": "Payload validation or business-rule error."},
+    },
+)
+def receive_shipment(event: ShipmentEvent, x_api_key: str = Header(default="")):
+    authenticate(x_api_key)
+
+    # Surface unknown fields as a schema-drift signal without rejecting them.
+    if event.model_extra:
+        logger.warning(
+            "Unknown fields in shipment payload fulfillment_id=%s fields=%s",
+            event.fulfillment_id,
+            sorted(event.model_extra),
+        )
+
+    apply_business_rules(event)
+
+    # Idempotency (not implemented): shipment events are at-least-once, so the
+    # same fulfillment_id may arrive more than once. A production version would
+    # check fulfillment_id here and skip re-forwarding on a duplicate, returning
+    # the same acknowledgement. See README.
+
+    # A correlation id is minted per request and returned in the acknowledgement
+    # and stamped on the downstream log line, so a single request can be traced
+    # end to end when troubleshooting across systems.
+    correlation_id = uuid.uuid4().hex
+    forward_to_downstream(event, correlation_id)
+    return {
+        "status": "accepted",
+        "fulfillment_id": event.fulfillment_id,
+        "correlation_id": correlation_id,
+    }
