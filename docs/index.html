@@ -366,6 +366,49 @@
 </section>
 
 <section>
+  <p class="section-kicker"><span class="en">Data quality</span><span class="zh">資料品質</span></p>
+  <h2><span class="en">Bad data is captured, not just bounced</span><span class="zh">壞資料要留痕,不只是退回</span></h2>
+  <p class="prose">
+    <span class="en">A shipment is an <b>atomic fact</b> — "this fulfillment shipped these items." If any part is invalid — say one <code>shipped_items</code> entry has an empty <code>sku</code> — the service does <b>not</b> silently accept a partial shipment (that would under-report what shipped and corrupt downstream analytics). The <b>whole event</b> is rejected <em>and</em> captured to a <b>dead-letter (quarantine)</b> sink with a reason, plus an <b>alert</b> — so the service stays up, the record is never lost, and it can be reviewed and replayed, rather than bounced back with a bare <code>422</code> nobody follows up on. Authentication runs <b>first</b>, so unauthenticated junk never reaches the sink.</span>
+    <span class="zh">一筆 shipment 是<b>原子事實</b>——「這次出貨 = 這些品項」。只要有一部分無效——例如某條 <code>shipped_items</code> 的 <code>sku</code> 是空的——服務<b>不會</b>默默收下半套(那會讓下游少算、對不上)。而是把<b>整筆</b>退回,<em>並同時</em>連同原因丟進 <b>dead-letter(quarantine)</b>、再發一則 <b>alert</b>——服務照活、資料不遺失、可回頭排查與重送,而不是回個沒人跟進的 <code>422</code> 就算了。而且<b>先驗身分</b>,沒授權的垃圾根本進不了 sink。</span>
+  </p>
+  <div class="grid2">
+    <div>
+      <p class="colhead"><span class="en">Request · one bad item</span><span class="zh">請求 · 有一條壞 item</span></p>
+<pre>POST /v1/shipments        // authenticated
+{
+  "fulfillment_id": "FUL_99821", ...,
+  "shipped_items": [
+    { "order_item_id": "ITEM-1", "sku": "BLUE-S", "quantity_shipped": 2 },
+    { "order_item_id": "ITEM-2", "sku": "", "quantity_shipped": 1 }
+  ]                                    // ^ empty SKU
+}</pre>
+    </div>
+    <div>
+      <p class="colhead"><span class="en">Response · 422 (whole event quarantined)</span><span class="zh">回應 · 422(整筆已隔離)</span></p>
+<pre>{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request payload failed validation.",
+    "details": [
+      { "loc": ["body","shipped_items",1,"sku"],
+        "msg": "String should have at least 1 character" }
+    ]
+  }
+}
+// side effect: whole event -> dead-letter sink + alert log</pre>
+    </div>
+  </div>
+  <div class="decision">
+    <h3><span class="en">Why capture the whole event</span><span class="zh">為什麼是「整筆」留痕</span></h3>
+    <p>
+      <span class="en">Accepting only the good line items would silently record an incomplete shipment — a data-correctness bug, which is exactly what this guards. Capturing the whole event (rather than crashing, or bouncing a bare error) keeps the reject reviewable and replayable and surfaces it via an alert. <b>Stated assumptions</b> (the brief was single-event): senders are systems, so a reject must be captured — not just returned; a shipment is atomic, so a bad part quarantines the whole; the dead-letter sink and alerting are mocked here (an in-memory list and a warning log), in the same spirit as the mocked downstream.</span>
+      <span class="zh">只收好的品項,等於默默記了一筆不完整的出貨——那本身就是資料錯誤,而這正是要防的。把整筆留痕(而不是讓程式崩、或只回個乾巴巴的錯)讓被拒的資料可回查、可重送,並用 alert 浮出來。<b>明確假設</b>(題目原本是單筆):送資料的是系統,所以被拒也要留痕、不能只回傳;shipment 是原子的,壞一部分就隔離整筆;dead-letter 與告警在這裡用 mock(記憶體清單 + warning log),跟「下游用 mock」同精神。</span>
+    </p>
+  </div>
+</section>
+
+<section>
   <p class="section-kicker">Live demo</p>
   <h2 id="demo"><span class="en">Try it in the browser</span><span class="zh">在瀏覽器直接試</span></h2>
   <p class="prose">
@@ -384,6 +427,7 @@
       <button onclick="preset('notrack')"><span class="en">❌ Missing tracking</span><span class="zh">❌ 缺追蹤號</span></button>
       <button onclick="preset('enum')"><span class="en">❌ Bad carrier</span><span class="zh">❌ 貨運商錯</span></button>
       <button onclick="preset('qty')"><span class="en">❌ Quantity = 0</span><span class="zh">❌ 數量 0</span></button>
+      <button onclick="preset('baditem')"><span class="en">❌ Bad item SKU</span><span class="zh">❌ item SKU 空</span></button>
       <button onclick="preset('empty')"><span class="en">❌ Empty field</span><span class="zh">❌ 空字串</span></button>
       <button onclick="preset('badkey')"><span class="en">🔒 Wrong key</span><span class="zh">🔒 key 錯</span></button>
     </div>
@@ -459,6 +503,7 @@ function preset(kind){
   else if(kind==="notrack"){delete p.tracking_number;}
   else if(kind==="enum"){p.carrier="USPS";}
   else if(kind==="qty"){p.shipped_items[0].quantity_shipped=0;}
+  else if(kind==="baditem"){p.shipped_items.push({order_item_id:"ITEM-10002",sku:"",quantity_shipped:1});}
   else if(kind==="empty"){p.fulfillment_id="";}
   else if(kind==="badkey"){document.getElementById("apikey").value="wrong-key";}
   document.getElementById("payload").value=JSON.stringify(p,null,2);
@@ -502,11 +547,13 @@ function corrId(){
   return s;
 }
 
-function render(code,body,drift){
+function render(code,body,drift,quarantined){
   const resp=document.getElementById("resp");
-  let cls = code<300 ? "st-2xx" : (code===401||code>=500) ? "st-err" : "st-err";
   const label={202:"202 Accepted",401:"401 Unauthorized",422:"422 Unprocessable Entity"}[code]||code;
   let html=`<div class="statusline ${code<300?'st-ok':'st-err'}">${label}</div>`;
+  if(quarantined){
+    html+=`<div class="driftnote">dead-letter · quarantined + alert — ${escapeHtml(quarantined)}</div>`;
+  }
   if(drift&&drift.length){
     html+=`<div class="driftnote">log · schema-drift: unknown fields ${JSON.stringify(drift.sort())}</div>`;
   }
@@ -518,30 +565,36 @@ function escapeHtml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").repla
 function send(){
   const key=document.getElementById("apikey").value;
   const raw=document.getElementById("payload").value;
-  let body;
-  try{ body=JSON.parse(raw); }
-  catch(e){
-    render(422,{error:{code:"VALIDATION_ERROR",message:"Request payload failed validation.",
-      details:[{loc:["body"],msg:"invalid JSON: "+e.message}]}});
-    return;
-  }
-  // 1. Structural validation (Pydantic, before handler)
-  const errs=validateBody(body);
-  if(errs.length){
-    render(422,{error:{code:"VALIDATION_ERROR",message:"Request payload failed validation.",details:errs}});
-    return;
-  }
-  // 2. Authenticate
+
+  // 1. Authenticate first — a 401 is an auth problem, never a data-quality one,
+  //    so unauthenticated junk never reaches the dead-letter sink.
   if(!key||key!==EXPECTED_KEY){
     render(401,{error:{code:"UNAUTHORIZED",message:"Invalid or missing API key."}});
     return;
   }
+  // 2. Parse + validate the whole event. A shipment is atomic, so any invalid
+  //    part quarantines the whole event (captured to dead-letter + alert).
+  let body;
+  try{ body=JSON.parse(raw); }
+  catch(e){
+    render(422,{error:{code:"VALIDATION_ERROR",message:"Request body is not valid JSON."}},
+      null,"body is not valid JSON");
+    return;
+  }
+  const errs=validateBody(body);
+  if(errs.length){
+    const reason=errs[0].loc.join(".")+": "+errs[0].msg;
+    render(422,{error:{code:"VALIDATION_ERROR",message:"Request payload failed validation.",details:errs}},
+      null,reason);
+    return;
+  }
   // 3. Schema drift (unknown fields) — accepted, logged
   const drift=Object.keys(body).filter(k=>!KNOWN.includes(k));
-  // 4. Business rule
+  // 4. Business rule — a violation is captured too, not just bounced
   if(body.status==="shipped" && !body.tracking_number){
     render(422,{error:{code:"MISSING_TRACKING_NUMBER",
-      message:"A shipment marked as 'shipped' must include a tracking number."}},drift);
+      message:"A shipment marked as 'shipped' must include a tracking number."}},
+      drift,"status=shipped but no tracking_number");
     return;
   }
   // 5. Accept
