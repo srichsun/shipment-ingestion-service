@@ -367,7 +367,7 @@
 
 <section>
   <p class="section-kicker"><span class="en">Data quality</span><span class="zh">資料品質</span></p>
-  <h2><span class="en">Bad data is captured, not just bounced</span><span class="zh">壞資料要留痕,不只是退回</span></h2>
+  <h2 id="data-quality"><span class="en">Bad data is captured, not just bounced</span><span class="zh">壞資料要留痕,不只是退回</span></h2>
   <p class="prose">
     <span class="en">A shipment is an <b>atomic fact</b> — "this fulfillment shipped these items." If any part is invalid — say one <code>shipped_items</code> entry has an empty <code>sku</code> — the service does <b>not</b> silently accept a partial shipment (that would under-report what shipped and corrupt downstream analytics). The <b>whole event</b> is rejected <em>and</em> captured to a <b>dead-letter (quarantine)</b> sink with a reason, plus an <b>alert</b> — so the service stays up, the record is never lost, and it can be reviewed and replayed, rather than bounced back with a bare <code>422</code> nobody follows up on. Authentication runs <b>first</b>, so unauthenticated junk never reaches the sink.</span>
     <span class="zh">一筆 shipment 是<b>原子事實</b>——「這次出貨 = 這些品項」。只要有一部分無效——例如某條 <code>shipped_items</code> 的 <code>sku</code> 是空的——服務<b>不會</b>默默收下半套(那會讓下游少算、對不上)。而是把<b>整筆</b>退回,<em>並同時</em>連同原因丟進 <b>dead-letter(quarantine)</b>、再發一則 <b>alert</b>——服務照活、資料不遺失、可回頭排查與重送,而不是回個沒人跟進的 <code>422</code> 就算了。而且<b>先驗身分</b>,沒授權的垃圾根本進不了 sink。</span>
@@ -405,6 +405,27 @@
       <span class="en">Accepting only the good line items would silently record an incomplete shipment — a data-correctness bug, which is exactly what this guards. Capturing the whole event (rather than crashing, or bouncing a bare error) keeps the reject reviewable and replayable and surfaces it via an alert. <b>Stated assumptions</b> (the brief was single-event): senders are systems, so a reject must be captured — not just returned; a shipment is atomic, so a bad part quarantines the whole; the dead-letter sink and alerting are mocked here (an in-memory list and a warning log), in the same spirit as the mocked downstream.</span>
       <span class="zh">只收好的品項,等於默默記了一筆不完整的出貨——那本身就是資料錯誤,而這正是要防的。把整筆留痕(而不是讓程式崩、或只回個乾巴巴的錯)讓被拒的資料可回查、可重送,並用 alert 浮出來。<b>明確假設</b>(題目原本是單筆):送資料的是系統,所以被拒也要留痕、不能只回傳;shipment 是原子的,壞一部分就隔離整筆;dead-letter 與告警在這裡用 mock(記憶體清單 + warning log),跟「下游用 mock」同精神。</span>
     </p>
+  </div>
+</section>
+
+<section>
+  <p class="section-kicker"><span class="en">Delivery &amp; acknowledgement</span><span class="zh">投遞與回覆</span></p>
+  <h2 id="delivery"><span class="en">What 202 promises — and downstream failure</span><span class="zh">202 承諾了什麼,以及下游失敗怎麼辦</span></h2>
+  <div class="grid2">
+    <div class="decision">
+      <h3><span class="en">After 202, how the caller learns the outcome</span><span class="zh">回 202 後,對方怎麼知道結束</span></h3>
+      <p>
+        <span class="en"><code>202 Accepted</code> means "durably accepted for processing," not "finished." Whether — and how — the caller needs to learn the outcome is a requirement the brief doesn't specify, so I'd confirm it first. If the caller needs the result: (1)&nbsp;<b>poll a status endpoint</b> keyed by <code>fulfillment_id</code> — <code>GET /v1/shipments/{id}</code>, advertised via a <code>Location</code> header; or (2)&nbsp;a <b>webhook</b> we call back when done. If it doesn't: (3)&nbsp;<b>fire-and-forget</b> — a truthful <code>202</code> (persisted before we ack) is receipt enough. Either way, the <code>correlation_id</code> we return ties the logs together for tracing.</span>
+        <span class="zh">回 <code>202</code> 的意思是「我已經穩妥收下、會處理」,不是「已經做完」。呼叫方<b>需不需要知道處理結果</b>,如果題目沒說清楚的需求,我會先問清楚再決定。如果需要:(1)&nbsp;給他一個<b>查詢進度的網址</b>,他拿 <code>fulfillment_id</code> 去問——這個網址我直接放在回覆的 <code>Location</code> 欄位,他照著查就好;或 (2)&nbsp;我做完<b>主動通知他</b>(webhook)。如果不需要:(3)&nbsp;<b>送出去就好、不追蹤</b>(fire-and-forget)——因為 <code>202</code> 已經代表「我穩妥收下」,當收據就夠。不論哪種,回覆都帶一個 <code>correlation_id</code>,能把前後的 log 串起來方便追。</span>
+      </p>
+    </div>
+    <div class="decision">
+      <h3><span class="en">If the downstream returns 500</span><span class="zh">如果下游回 500</span></h3>
+      <p>
+        <span class="en">Because we already returned <code>202</code>, forwarding happens <b>after</b> the ack, asynchronously — a downstream <code>500</code> never fails the caller's request. On failure: <b>retry with backoff</b>; if it still can't be delivered, route it to an <b>outbound dead-letter + alert</b> (the same quarantine idea, on the outbound side) so the event is never lost. The event is <b>persisted before the 202</b> (inbox pattern), so a crash between ack and forward loses nothing. Downstream is mocked here (per the brief), so there is no live failure path today — this is the design for when it becomes a real call.</span>
+        <span class="zh">因為我們已經先回了「收到了」(<code>202</code>),真正把事件送給下游是<b>在背景做的</b>——所以就算下游壞掉、回 <code>500</code>,也<b>不會連累到來送資料的人</b>。送失敗會<b>自動重試,而且每次失敗就多等一下再試</b>(免得把已經掛掉的下游打得更慘);真的一直送不出去,就把這筆<b>先擱到一個「送不出去的暫存區」(dead-letter)並發警報</b>,之後再補送,<b>資料不會不見</b>。而且在回「收到了」之前,就<b>先把事件存進資料庫</b>,所以就算程式當掉也不會弄丟。目前下游是用假的(題目要求),還沒有真的失敗情況——這是之後換成真呼叫時的做法。</span>
+      </p>
+    </div>
   </div>
 </section>
 
